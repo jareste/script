@@ -3,7 +3,7 @@ NAME = ft_script
 #########
 RM = rm -rf
 CC = cc
-CFLAGS = -Werror -Wextra -Wall -O3 -Iinc -Iinc/libft -Iinc/printf #-DDEBUG
+CFLAGS = -Werror -Wextra -Wall -O3 -Iinc -Iinc/libft -Iinc/printf -DDEBUG
 # CFLAGS = -Werror -Wextra -Wall -g -fsanitize=address -O3 -I$(OPENSSL_BUILD_DIR)/include -I$(THIRD_PARTY_PATH)/cJSON -Iinc -DUSE_SSL #-DDEBUG
 # CFLAGS = -Werror -Wextra -Wall -g -fsanitize=thread -O3 -I$(OPENSSL_BUILD_DIR)/include -I$(THIRD_PARTY_PATH)/cJSON -Iinc -DUSE_SSL #-DDEBUG
 LDFLAGS = -Linc/libft -lft -Linc/printf -lftprintf

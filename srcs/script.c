@@ -60,7 +60,8 @@ static int pty_open_master(int *mfd, int *sfd)
 static int copy_loop(int mfd, int types_fd, pid_t child)
 {
     char buf[4096];
-    int stdin_fd = STDIN_FILENO, stdout_fd = STDOUT_FILENO;
+    int stdin_fd = STDIN_FILENO;
+    int stdout_fd = STDOUT_FILENO;
     int status;
     int max_fd;
     int ret;
@@ -113,6 +114,7 @@ static int copy_loop(int mfd, int types_fd, pid_t child)
             /* echo to screen */
             w = write(stdout_fd, buf, n);
             (void)w;
+            // (void)stdout_fd;
             /* write to typescript */
             w2 = write(types_fd, buf, n);
             (void)w2;
@@ -178,8 +180,6 @@ int main(int argc, char **argv, char **envp)
 
     log_init();
 
-    log_msg(LOG_LEVEL_ERROR, "ERROOOORRRR\n");
-
     if (pty_open_master(&mfd, &sfd) == -1)
     {
 #ifdef DEBUG
@@ -224,11 +224,17 @@ int main(int argc, char **argv, char **envp)
         /* Child/slave */
         /* Create new session for slave */
         if (setsid() == -1)
+        {
+            log_msg(LOG_LEVEL_ERROR, "setsid failed\n");
             _exit(127);
+        }
 
         /* Make slave control tty from now on. */
         if (ioctl(sfd, TIOCSCTTY, 0) == -1)
+        {
+            log_msg(LOG_LEVEL_ERROR, "ioctl TIOCSCTTY failed\n");
             _exit(127);
+        }
 
         dup2(sfd, STDIN_FILENO);
         dup2(sfd, STDOUT_FILENO);
@@ -252,7 +258,9 @@ int main(int argc, char **argv, char **envp)
             args[0] = sh;
             args[1] = "-i";
             args[2] = NULL;
-            execve(sh, args, envp);
+            log_msg(LOG_LEVEL_DEBUG, "Starting interactive shell: %s\n", sh_abs);
+            log_msg(LOG_LEVEL_DEBUG, "Sending args: %s\n", args[0]);
+            execve(sh_abs, args, envp);
         }
         _exit(127);
     }

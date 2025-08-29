@@ -20,6 +20,7 @@
 #include "log/log.h" /* illegal calls. debugging purpouse :) */
 #include "sighandlers/sighandlers.h"
 #include "filehandler/filehandler.h"
+#include "parser/parser.h"
 #include <libft.h>
 #include <ft_printf.h>
 
@@ -58,7 +59,7 @@ static int m_pty_open_master(int *mfd, int *sfd)
     return 0;
 }
 
-static int m_copy_loop(int mfd, int file_fd, pid_t child)
+static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
@@ -94,7 +95,7 @@ static int m_copy_loop(int mfd, int file_fd, pid_t child)
                 /* EOF on stdin -> shutdown write side to child */
                 // shutdown(mfd, SHUT_WR); /* not all kernels support on pty; ignore errors */
                 write(stdout_fd, "exit\r\n", 7);
-                fh_write(mfd, "exit\r\n", 7);
+                write(mfd, "exit\r\n", 7);
                 break;
             }
             else
@@ -114,7 +115,7 @@ static int m_copy_loop(int mfd, int file_fd, pid_t child)
             /* echo to screen */
             write(stdout_fd, buf, n);
             /* write to file */
-            fh_write(file_fd, buf, n);
+            fh_write(&fds->both_ctx, fds->both_fd, buf, n);
         }
 
         if (r == child)
@@ -124,7 +125,7 @@ static int m_copy_loop(int mfd, int file_fd, pid_t child)
             ;
         }
     }
-    fh_flush(file_fd); /* I think it's not needed tbh */
+    fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
     return 0;
 }
 
@@ -160,21 +161,38 @@ static char* m_get_basename(const char* path)
 
 int main(int argc, char **argv, char **envp)
 {
-    const char *outfile = "typescript";
+    // const char *outfile = "typescript";
     int quiet = 0;
-    const char *cmd = NULL;
     time_t t;
     pid_t pid;
     int status;
-    int file_fd;
+    open_fds fds;
     int mfd;
     int sfd;
+    int ret;
     char* sh_abs;
     char* sh;
     char* args[4];
+    parser_t cfg;
 
-    /* TODO parse */
-    (void)argc; (void)argv;
+    (void)argc;
+
+    ret = parse(argv, &cfg);
+    if (ret == -1)
+    {
+        ft_dprintf(2, "Try 'ft_script --help' for more information.\n");
+        return 1;
+    }
+    else if (ret == 1)
+    {
+        ft_dprintf(2, "Help requested\n");
+        return 0;
+    }
+    else if (ret == 2)
+    {
+        ft_dprintf(2, "ft_script from jareste- 1.0.0 (replicates script from util-linux 2.38.1)\n");
+        return 0;
+    }
 
     log_init();
 
@@ -190,22 +208,19 @@ int main(int argc, char **argv, char **envp)
 
     sigh_set_slavefd(sfd);
 
-    file_fd = open(outfile, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-    if (file_fd < 0)
+    ret = fh_open_files(&fds, cfg.infile, cfg.outfile, cfg.file, cfg.options & OPT_append ? 0 : 1);
+    if (ret == -1)
     {
-#ifdef DEBUG
-        perror("open typescript");
-#else
-        ft_dprintf(2, "Open '%s' failed\n", outfile);
-#endif
+        ft_dprintf(2, "Failed to open files\n");
         return 1;
     }
 
     if (!quiet)
     {
         t = time(NULL);
-        ft_dprintf(STDOUT_FILENO, "Script started on %s\r\n", ctime(&t));
-        ft_dprintf(file_fd, "Script started on %s\r\n", ctime(&t));
+        if (!(cfg.options & OPT_quiet))
+            ft_dprintf(STDOUT_FILENO, "Script started on %s\r\n", ctime(&t));
+        ft_dprintf(fds.both_fd, "Script started on %s\r\n", ctime(&t));
     }
 
     sigh_init_signals();
@@ -244,15 +259,15 @@ int main(int argc, char **argv, char **envp)
         dup2(sfd, STDERR_FILENO);
         close(mfd);
 
-        if (cmd)
+        if (cfg.command)
         {
             sh_abs = m_ft_getenv(envp, "SHELL");
             sh = m_get_basename(sh_abs);
             args[0] = sh;
             args[1] = "-c";
-            args[2] = (char*)cmd;
+            args[2] = (char*)cfg.command;
             args[3] = NULL;
-            execve(sh, args, envp);
+            execve(sh_abs, args, envp);
         }
         else
         {
@@ -269,17 +284,18 @@ int main(int argc, char **argv, char **envp)
     }
 
     close(sfd);
-    m_copy_loop(mfd, file_fd, pid);
+    m_copy_loop(mfd, &fds, pid);
 
     waitpid(pid, &status, 0);
 
     if (!quiet)
     {
         t = time(NULL);
-        ft_dprintf(file_fd, "\nScript done on %s\r\n", ctime(&t));
-        ft_dprintf(STDOUT_FILENO, "\nScript done on %s\r\n", ctime(&t));
+        ft_dprintf(fds.both_fd, "\nScript done on %s\r\n", ctime(&t));
+        if (!(cfg.options & OPT_quiet))
+            ft_dprintf(STDOUT_FILENO, "\nScript done on %s\r\n", ctime(&t));
     }
-    close(file_fd);
+    close(fds.both_fd);
     close(mfd);
     sigh_tty_restore();
     return 0;

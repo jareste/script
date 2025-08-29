@@ -2,29 +2,63 @@
 #include <fcntl.h>
 
 #define FLUSH_LINE(fd, total_written) do { \
-    if (head != 0) { \
-        ssize_t _w = write(fd, _buf, head); \
+    if (ctx->head != 0) { \
+        ssize_t _w = write(fd, ctx->buf, ctx->head); \
         if (_w > 0) *(total_written) += _w; \
-        head = 0; \
+        ctx->head = 0; \
     } \
 } while(0)
 
 #define POP_UTF8() do { \
-    if (head != 0) { \
-        size_t _i = head - 1; \
-        while (_i > 0 && (_buf[_i] & 0xC0) == 0x80) _i--; \
-        head = _i; \
+    if (ctx->head != 0) { \
+        size_t _i = ctx->head - 1; \
+        while (_i > 0 && (ctx->buf[_i] & 0xC0) == 0x80) _i--; \
+        ctx->head = _i; \
     } \
 } while(0)
 
-ssize_t fh_write(int fd, const void *buf, size_t count)
+int fh_open_files(open_fds* fds, char* in, char* out, char* both, int erase)
+{
+    int flags;
+
+    fds->in_fd = -1;
+    fds->out_fd = -1;
+    fds->both_fd = -1;
+
+    if (erase)
+        flags = O_CREAT | O_RDWR | O_TRUNC;
+    else
+        flags = O_CREAT | O_RDWR | O_APPEND;
+
+    if (in)
+    {
+        fds->in_fd = open(in, flags, 0644);
+        if (fds->in_fd == -1)
+            return -1;
+    }
+
+    if (out)
+    {
+        fds->out_fd = open(out, flags, 0644);
+        if (fds->out_fd == -1)
+            return -1;
+    }
+
+    if (both)
+    {
+        fds->both_fd = open(both, flags, 0644);
+        if (fds->both_fd == -1)
+            return -1;
+    }
+
+    return 0;
+}
+
+ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
 {
     /* Usually we should always receive only one byte at a time.
      * That's bc no canonical. but just in case :) 
      */
-    static unsigned char _buf[4096];
-    static size_t head = 0;
-    static int cr_pending = 0;
     unsigned char c;
     const unsigned char *p = (const unsigned char *)buf;
     size_t i;
@@ -38,10 +72,10 @@ ssize_t fh_write(int fd, const void *buf, size_t count)
     {
         c = p[i];
 
-        if (cr_pending && c != '\n')
+        if (ctx->cr_pending && c != '\n')
         {
-            head = 0;
-            cr_pending = 0;
+            ctx->head = 0;
+            ctx->cr_pending = 0;
         }
 
         if (c == '\b' || c == 0x7F)
@@ -57,13 +91,13 @@ ssize_t fh_write(int fd, const void *buf, size_t count)
 
         if (c == '\r')
         {
-            cr_pending = 1;
+            ctx->cr_pending = 1;
             continue;
         }
 
         if (c == '\n')
         {
-            cr_pending = 0;
+            ctx->cr_pending = 0;
             FLUSH_LINE(fd, &total_written);
             w = write(fd, "\n", 1);
             if (w > 0)
@@ -71,22 +105,22 @@ ssize_t fh_write(int fd, const void *buf, size_t count)
             continue;
         }
 
-        if (head < sizeof(_buf))
+        if (ctx->head < sizeof(ctx->buf))
         {
-            _buf[head++] = c;
+            ctx->buf[ctx->head++] = c;
         }
         else
         {
             /* full buffer, empty it. */
             FLUSH_LINE(fd, &total_written);
-            _buf[head++] = c;
+            ctx->buf[ctx->head++] = c;
         }
     }
 
     return total_written;
 }
 
-ssize_t fh_flush(int fd)
+ssize_t fh_flush(fh_ctx* ctx, int fd)
 {
-    return fh_write(fd, (const void*)"", 0);
+    return fh_write(ctx, fd, (const void*)"", 0);
 }

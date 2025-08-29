@@ -11,11 +11,11 @@ RELEASE_CFLAGS = -Werror -Wextra -Wall -g -O3
 #########
 
 #########
-FILES = script log sighandlers filehandler
+FILES = script log sighandlers filehandler parser
 
 SRC = $(addsuffix .c, $(FILES))
 
-vpath %.c srcs srcs/log srcs/sighandlers srcs/filehandler
+vpath %.c srcs srcs/log srcs/sighandlers srcs/filehandler srcs/parser
 #########
 
 OBJ_DIR = objs

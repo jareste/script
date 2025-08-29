@@ -13,12 +13,12 @@
 #include <string.h>
 #include <errno.h>
 
-// Linux-specific ioctl numbers
 #ifndef TIOCGPTN
 # include <linux/tty.h>
 #endif
 
 #include "log/log.h" /* illegal calls. debugging purpouse :) */
+#include "sighandlers/sighandlers.h"
 #include <libft.h>
 #include <ft_printf.h>
 
@@ -57,7 +57,7 @@ static int pty_open_master(int *mfd, int *sfd)
     return 0;
 }
 
-static int copy_loop(int mfd, int types_fd, pid_t child)
+static int copy_loop(int mfd, int file_fd, pid_t child)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
@@ -68,8 +68,6 @@ static int copy_loop(int mfd, int types_fd, pid_t child)
     fd_set rfds;
     pid_t r;
     ssize_t n;
-    ssize_t w;
-    ssize_t w2;
 
     while (true)
     {
@@ -94,12 +92,13 @@ static int copy_loop(int mfd, int types_fd, pid_t child)
             {
                 /* EOF on stdin -> shutdown write side to child */
                 // shutdown(mfd, SHUT_WR); /* not all kernels support on pty; ignore errors */
+                write(stdout_fd, "exit\r\n", 7);
+                write(mfd, "exit\r\n", 7);
                 break;
             }
             else
             {
-                w = write(mfd, buf, n);
-                (void)w;
+                write(mfd, buf, n);
             }
         }
         /* master -> stdout + file */
@@ -112,12 +111,9 @@ static int copy_loop(int mfd, int types_fd, pid_t child)
                 break;
             }
             /* echo to screen */
-            w = write(stdout_fd, buf, n);
-            (void)w;
-            // (void)stdout_fd;
-            /* write to typescript */
-            w2 = write(types_fd, buf, n);
-            (void)w2;
+            write(stdout_fd, buf, n);
+            /* write to file */
+            write(file_fd, buf, n);
         }
 
         if (r == child)
@@ -190,6 +186,8 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
+    sigh_set_slavefd(sfd);
+
     file_fd = open(outfile, O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (file_fd < 0)
     {
@@ -204,9 +202,11 @@ int main(int argc, char **argv, char **envp)
     if (!quiet)
     {
         t = time(NULL);
-        ft_dprintf(STDOUT_FILENO, "Script started on %s", ctime(&t)); // nosys
-        ft_dprintf(file_fd, "Script started on %s", ctime(&t)); // nosys
+        ft_dprintf(STDOUT_FILENO, "Script started on %s\r\n", ctime(&t));
+        ft_dprintf(file_fd, "Script started on %s\r\n", ctime(&t));
     }
+
+    sigh_init_signals();
 
     pid = fork();
     if (pid < 0)
@@ -221,6 +221,7 @@ int main(int argc, char **argv, char **envp)
 
     if (pid == 0)
     {
+        sigh_set_childfd(pid);
         /* Child/slave */
         /* Create new session for slave */
         if (setsid() == -1)
@@ -273,10 +274,11 @@ int main(int argc, char **argv, char **envp)
     if (!quiet)
     {
         t = time(NULL);
-        ft_dprintf(file_fd, "\nScript done on %s", ctime(&t));
-        ft_dprintf(STDOUT_FILENO, "\nScript done on %s", ctime(&t));
+        ft_dprintf(file_fd, "\nScript done on %s\r\n", ctime(&t));
+        ft_dprintf(STDOUT_FILENO, "\nScript done on %s\r\n", ctime(&t));
     }
     close(file_fd);
     close(mfd);
+    sigh_tty_restore();
     return 0;
 }

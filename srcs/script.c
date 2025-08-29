@@ -19,12 +19,13 @@
 
 #include "log/log.h" /* illegal calls. debugging purpouse :) */
 #include "sighandlers/sighandlers.h"
+#include "filehandler/filehandler.h"
 #include <libft.h>
 #include <ft_printf.h>
 
 /* allowed https://x64.syscall.sh */
 
-static int pty_open_master(int *mfd, int *sfd)
+static int m_pty_open_master(int *mfd, int *sfd)
 {
     int master = open("/dev/ptmx", O_RDWR | O_NOCTTY);
     if (master < 0) return -1;
@@ -57,7 +58,7 @@ static int pty_open_master(int *mfd, int *sfd)
     return 0;
 }
 
-static int copy_loop(int mfd, int file_fd, pid_t child)
+static int m_copy_loop(int mfd, int file_fd, pid_t child)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
@@ -93,7 +94,7 @@ static int copy_loop(int mfd, int file_fd, pid_t child)
                 /* EOF on stdin -> shutdown write side to child */
                 // shutdown(mfd, SHUT_WR); /* not all kernels support on pty; ignore errors */
                 write(stdout_fd, "exit\r\n", 7);
-                write(mfd, "exit\r\n", 7);
+                fh_write(mfd, "exit\r\n", 7);
                 break;
             }
             else
@@ -113,7 +114,7 @@ static int copy_loop(int mfd, int file_fd, pid_t child)
             /* echo to screen */
             write(stdout_fd, buf, n);
             /* write to file */
-            write(file_fd, buf, n);
+            fh_write(file_fd, buf, n);
         }
 
         if (r == child)
@@ -123,10 +124,11 @@ static int copy_loop(int mfd, int file_fd, pid_t child)
             ;
         }
     }
+    fh_flush(file_fd); /* I think it's not needed tbh */
     return 0;
 }
 
-char* ft_getenv(char** envp, const char* var)
+static char* m_ft_getenv(char** envp, const char* var)
 {
     size_t len;
     char** env;
@@ -142,7 +144,7 @@ char* ft_getenv(char** envp, const char* var)
     return NULL;
 }
 
-char* get_basename(const char* path)
+static char* m_get_basename(const char* path)
 {
     char* last_slash;
 
@@ -176,7 +178,7 @@ int main(int argc, char **argv, char **envp)
 
     log_init();
 
-    if (pty_open_master(&mfd, &sfd) == -1)
+    if (m_pty_open_master(&mfd, &sfd) == -1)
     {
 #ifdef DEBUG
         perror("pty_open_master");
@@ -244,8 +246,8 @@ int main(int argc, char **argv, char **envp)
 
         if (cmd)
         {
-            sh_abs = ft_getenv(envp, "SHELL");
-            sh = get_basename(sh_abs);
+            sh_abs = m_ft_getenv(envp, "SHELL");
+            sh = m_get_basename(sh_abs);
             args[0] = sh;
             args[1] = "-c";
             args[2] = (char*)cmd;
@@ -254,8 +256,8 @@ int main(int argc, char **argv, char **envp)
         }
         else
         {
-            sh_abs = ft_getenv(envp, "SHELL");
-            sh = get_basename(sh_abs);
+            sh_abs = m_ft_getenv(envp, "SHELL");
+            sh = m_get_basename(sh_abs);
             args[0] = sh;
             args[1] = "-i";
             args[2] = NULL;
@@ -267,7 +269,7 @@ int main(int argc, char **argv, char **envp)
     }
 
     close(sfd);
-    copy_loop(mfd, file_fd, pid);
+    m_copy_loop(mfd, file_fd, pid);
 
     waitpid(pid, &status, 0);
 

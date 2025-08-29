@@ -62,8 +62,8 @@ static int m_tty_raw(void)
 
     /* Keep canonical mode for line buffering, disable signals only */
     t.c_iflag &= ~(IXON | ICRNL);
-    t.c_lflag &= ~(ISIG | IEXTEN);  /* Keep ICANON and ECHO enabled */
-    t.c_lflag |= ICANON;  /* Explicitly enable canonical mode */
+    t.c_lflag &= ~(ICANON | ECHO | ISIG | IEXTEN);  /* Keep ICANON and ECHO enabled */
+    // t.c_lflag |= ICANON;  /* Explicitly enable canonical mode */
     t.c_oflag &= ~(OPOST);
 
     if (ioctl(STDIN_FILENO, TCSETS, &t) == -1)

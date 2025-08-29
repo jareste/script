@@ -26,28 +26,36 @@
 
 /* allowed https://x64.syscall.sh */
 
-static int m_pty_open_master(int *mfd, int *sfd)
+static int m_pty_open_master(int *mfd, int *sfd, char slave_path[64])
 {
     int master = open("/dev/ptmx", O_RDWR | O_NOCTTY);
+    int unlock = 0;
+    int ptn;
+    int slave;
+    char itoa_buf[20] = { 0 };
+
     if (master < 0) return -1;
 
     /* unlock slave (0 = unlock) */
-    int unlock = 0;
     if (ioctl(master, TIOCSPTLCK, &unlock) == -1)
     {
         close(master);
         return -1;
     }
     /* get slave PTY master */
-    int ptn;
     if (ioctl(master, TIOCGPTN, &ptn) == -1)
     {
         close(master);
         return -1;
     }
-    char slave_path[64];
-    snprintf(slave_path, sizeof(slave_path), "/dev/pts/%d", ptn); /* no syscall */
-    int slave = open(slave_path, O_RDWR | O_NOCTTY);
+
+    memset(itoa_buf, 0, sizeof(itoa_buf));
+    ft_itoa_nc(ptn, itoa_buf);
+
+    strncpy(slave_path, "/dev/pts/", 64);
+    strncat(slave_path, itoa_buf, 64 - strlen(slave_path) - 1);
+    log_msg(LOG_LEVEL_DEBUG, "slave path: %s\n", slave_path);
+    slave = open(slave_path, O_RDWR | O_NOCTTY);
     if (slave < 0)
     {
         close(master);
@@ -67,6 +75,8 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
     int status;
     int max_fd;
     int ret;
+    int exit_code = -1;
+    int signal = -1;
     fd_set rfds;
     pid_t r;
     ssize_t n;
@@ -74,6 +84,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
     while (true)
     {
         r = waitpid(child, &status, WNOHANG);
+        log_msg(LOG_LEVEL_DEBUG, "Cmd exit code=%d\n", WEXITSTATUS(status));
         
         FD_ZERO(&rfds);
         FD_SET(stdin_fd, &rfds);
@@ -101,6 +112,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
             else
             {
                 write(mfd, buf, n);
+                write(fds->in_fd, buf, n);
             }
         }
         /* master -> stdout + file */
@@ -116,15 +128,45 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
             write(stdout_fd, buf, n);
             /* write to file */
             fh_write(&fds->both_ctx, fds->both_fd, buf, n);
+            fh_write(&fds->out_ctx, fds->out_fd, buf, n);
         }
 
         if (r == child)
         {
-            /* child exited; keep looping to drain master until read() <= 0 */
-            /* no action here */
-            ;
+            if (WIFEXITED(status))
+            {
+                exit_code = WEXITSTATUS(status);
+                log_msg(LOG_LEVEL_DEBUG, "Child 1exited with code: %d\n", exit_code);
+                return exit_code;
+            }
+            else if (WIFSIGNALED(status))
+            {
+                signal = WTERMSIG(status);
+                log_msg(LOG_LEVEL_DEBUG, "Child 1killed by signal: %d\n", signal);
+                return 128 + signal;
+            }
         }
     }
+
+    r = waitpid(child, &status, WNOHANG);
+    log_msg(LOG_LEVEL_DEBUG, "Cmd exit code=%d\n", WEXITSTATUS(status));
+
+    if (r == child)
+    {
+        if (WIFEXITED(status))
+        {
+            exit_code = WEXITSTATUS(status);
+            log_msg(LOG_LEVEL_DEBUG, "Child 2exited with code: %d\n", exit_code);
+            return exit_code;
+        }
+        else if (WIFSIGNALED(status))
+        {
+            signal = WTERMSIG(status);
+            log_msg(LOG_LEVEL_DEBUG, "Child 2killed by signal: %d\n", signal);
+            return 128 + signal;
+        }
+    }
+
     fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
     return 0;
 }
@@ -159,9 +201,60 @@ static char* m_get_basename(const char* path)
     return (char*)path;
 }
 
+static void m_write_script_header(open_fds* fds, char* tty, char** envp, parser_t* cfg)
+{
+    struct winsize ws;
+    time_t now = time(NULL);
+    char time_str[64];
+    char *term = m_ft_getenv(envp, "TERM");
+    int i;
+    int fd;
+    
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S%z", localtime(&now));
+    
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
+    {
+        ws.ws_col = 80;
+        ws.ws_row = 24;
+    }
+
+    if (!(cfg->options & OPT_quiet))
+    {
+        ft_dprintf(STDOUT_FILENO, "Script started");
+        if ((cfg->options & OPT_OUTFILE) || (cfg->options & OPT_INOUTFILE))
+            ft_dprintf(STDOUT_FILENO, ", output log file is '%s'", cfg->file ? cfg->file : cfg->outfile);
+        if ((cfg->options & OPT_INFILE) || (cfg->options & OPT_INOUTFILE))
+            ft_dprintf(STDOUT_FILENO, ", input log file is '%s'", cfg->file ? cfg->file : cfg->infile);
+
+        ft_dprintf(STDOUT_FILENO, ".\n");
+    }
+
+    for (i = 0; i < 3; i++)
+    {
+        switch (i)
+        {
+        case 0:
+            fd = fds->both_fd;
+            break;
+        case 1:
+            fd = fds->out_fd;
+            break;
+        case 2:
+            fd = fds->in_fd;
+            break;
+        }
+
+        dprintf(fd, "Script started on %s [TERM=\"%s\" TTY=\"%s\" COLUMNS=\"%d\" LINES=\"%d\"]\n",
+                time_str,
+                term ? term : "unknown",
+                tty ? tty : "unknown", 
+                ws.ws_col,
+                ws.ws_row);
+    }
+}
+
 int main(int argc, char **argv, char **envp)
 {
-    // const char *outfile = "typescript";
     int quiet = 0;
     time_t t;
     pid_t pid;
@@ -173,6 +266,7 @@ int main(int argc, char **argv, char **envp)
     char* sh_abs;
     char* sh;
     char* args[4];
+    char slave_path[64] = { 0 };;
     parser_t cfg;
 
     (void)argc;
@@ -196,13 +290,9 @@ int main(int argc, char **argv, char **envp)
 
     log_init();
 
-    if (m_pty_open_master(&mfd, &sfd) == -1)
+    if (m_pty_open_master(&mfd, &sfd, slave_path) == -1)
     {
-#ifdef DEBUG
-        perror("pty_open_master");
-#else
         ft_dprintf(2, "Open pty master failed\n");
-#endif
         return 1;
     }
 
@@ -215,24 +305,14 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
-    if (!quiet)
-    {
-        t = time(NULL);
-        if (!(cfg.options & OPT_quiet))
-            ft_dprintf(STDOUT_FILENO, "Script started on %s\r\n", ctime(&t));
-        ft_dprintf(fds.both_fd, "Script started on %s\r\n", ctime(&t));
-    }
+    m_write_script_header(&fds, slave_path, envp, &cfg);
 
     sigh_init_signals();
 
     pid = fork();
     if (pid < 0)
     {
-#ifdef DEBUG
-        perror("fork");
-#else
         ft_dprintf(2, "Fork failed\n");
-#endif
         return 1;
     }
 
@@ -242,17 +322,11 @@ int main(int argc, char **argv, char **envp)
         /* Child/slave */
         /* Create new session for slave */
         if (setsid() == -1)
-        {
-            log_msg(LOG_LEVEL_ERROR, "setsid failed\n");
             _exit(127);
-        }
 
         /* Make slave control tty from now on. */
         if (ioctl(sfd, TIOCSCTTY, 0) == -1)
-        {
-            log_msg(LOG_LEVEL_ERROR, "ioctl TIOCSCTTY failed\n");
             _exit(127);
-        }
 
         dup2(sfd, STDIN_FILENO);
         dup2(sfd, STDOUT_FILENO);
@@ -293,7 +367,7 @@ int main(int argc, char **argv, char **envp)
         t = time(NULL);
         ft_dprintf(fds.both_fd, "\nScript done on %s\r\n", ctime(&t));
         if (!(cfg.options & OPT_quiet))
-            ft_dprintf(STDOUT_FILENO, "\nScript done on %s\r\n", ctime(&t));
+            ft_dprintf(STDOUT_FILENO, "Script done.\r\n");
     }
     close(fds.both_fd);
     close(mfd);

@@ -98,16 +98,19 @@ int parse(char **argv, parser_t *cfg)
             { /* --log-in <file> */
                 if (!has_inline) { i++; if (!argv[i]) { perr("missing value for --log-in\n"); return -1; } v = argv[i]; }
                 cfg->infile = (char*)v;
+                cfg->options |= OPT_INFILE;
             }
             else if (LONGEQ("log-out", name, namelen))
             { /* --log-out <file> */
                 if (!has_inline) { i++; if (!argv[i]) { perr("missing value for --log-out\n"); return -1; } v = argv[i]; }
                 cfg->outfile = (char*)v;
+                cfg->options |= OPT_OUTFILE;
             }
             else if (LONGEQ("log-io", name, namelen))
             { /* --log-io <file> */
                 if (!has_inline) { i++; if (!argv[i]) { perr("missing value for --log-io\n"); return -1; } v = argv[i]; }
                 cfg->file = (char*)v;
+                cfg->options |= OPT_INOUTFILE;
             }
             else if (LONGEQ("log-timing", name, namelen))
             { /* --log-timing <file> */
@@ -192,6 +195,7 @@ int parse(char **argv, parser_t *cfg)
                         if (attached) { val = attached; p += ft_strlen(attached); }
                         else { i++; if (!argv[i]) { perr("missing value for -I\n"); return -1; } val = argv[i]; }
                         cfg->infile = (char*)val;
+                        cfg->options |= OPT_INFILE;
                         break;
 
 
@@ -199,15 +203,14 @@ int parse(char **argv, parser_t *cfg)
                         if (attached) { val = attached; p += ft_strlen(attached); }
                         else { i++; if (!argv[i]) { perr("missing value for -O\n"); return -1; } val = argv[i]; }
                         cfg->outfile = (char*)val;
-                        cfg->file    = (char*)val;
+                        cfg->options |= OPT_OUTFILE;
                         break;
 
                     case 'B':
                         if (attached) { val = attached; p += ft_strlen(attached); }
                         else { i++; if (!argv[i]) { perr("missing value for -B\n"); return -1; } val = argv[i]; }
                         cfg->file = (char*)val;
-                        cfg->infile = (char*)val;
-                        cfg->outfile = (char*)val;
+                        cfg->options |= OPT_INOUTFILE;
                         break;
 
                     case 'T':

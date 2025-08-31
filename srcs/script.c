@@ -21,6 +21,7 @@
 #include "sighandlers/sighandlers.h"
 #include "filehandler/filehandler.h"
 #include "parser/parser.h"
+#include "help.h"
 #include <libft.h>
 #include <ft_printf.h>
 
@@ -95,12 +96,11 @@ static int m_get_exit_code(pid_t child, int* exit_code, int* signal)
     return 0;
 }
 
-static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
+static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
     int stdout_fd = STDOUT_FILENO;
-    // int status;
     int max_fd;
     int ret;
     int exit_code = -1;
@@ -108,6 +108,8 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
     fd_set rfds;
     pid_t r;
     ssize_t n;
+    time_t t;
+    char* time_str;
 
     while (true)
     {
@@ -158,12 +160,22 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
                 break;
             }
             /* echo to screen */
-            write(stdout_fd, buf, n);
+            if (echo)
+                write(stdout_fd, buf, n);
             /* write to file */
             fh_write(&fds->both_ctx, fds->both_fd, buf, n);
             fh_write(&fds->out_ctx, fds->out_fd, buf, n);
         }
     }
+
+    fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
+    fh_flush(&fds->out_ctx,  fds->out_fd);
+
+    t = time(NULL);
+    time_str = ctime(&t);
+    *strchr(time_str, '\n') = '\0';
+    ft_dprintf(fds->both_fd, "Script done on %s ", time_str);
+    ft_dprintf(fds->out_fd, "Script done on %s ", time_str);
 
     if (r == 0)
         r = m_get_exit_code(child, &exit_code, &signal);
@@ -171,18 +183,23 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
     {
         case 1:
             log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
-            break;
-        case 2:
-            log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", signal);
+            ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
+            ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
             break;
         case -1:
             return -1;
+        case 2:
+            log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", signal);
+            /* fallthrough */ /* KCH */
+        default:
+            ft_dprintf(fds->both_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+            ft_dprintf(fds->out_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+            break;
     }
-    fh_write(&fds->both_ctx, fds->both_fd, "Final line done\n", ft_strlen("Final line done\n"));
-    fh_write(&fds->out_ctx, fds->out_fd, "Final line done\n", ft_strlen("Final line done\n"));
 
-    fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
-    fh_flush(&fds->out_ctx,  fds->out_fd);
+    ft_dprintf(fds->both_fd, "\r\n");
+    ft_dprintf(fds->out_fd, "\r\n");
+
     return 0;
 }
 
@@ -330,7 +347,6 @@ static int m_exec_child(char** envp, parser_t* cfg, int sfd, int mfd)
 int main(int argc, char **argv, char **envp)
 {
     int quiet = 0;
-    time_t t;
     open_fds fds;
     int mfd;
     int sfd;
@@ -344,10 +360,10 @@ int main(int argc, char **argv, char **envp)
     switch (ret)
     {
         case -1:
-            ft_dprintf(2, "Failed to parse arguments\n");
+            ft_dprintf(2, "Try 'ft_script --help' for more information.\n");
             return 1;
         case 1:
-            ft_dprintf(2, "Help requested\n");
+            ft_dprintf(2, "%s", HELP_MSG);
             return 0;
         case 2:
             ft_dprintf(2, "ft_script from jareste- 1.0.0 (replicates script from util-linux 2.38.1)\n");
@@ -380,14 +396,12 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
-    m_copy_loop(mfd, &fds, ret);
+    m_copy_loop(mfd, &fds, ret, cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO)));
 
     // waitpid(ret, &status, 0);
 
     if (!quiet)
     {
-        t = time(NULL);
-        ft_dprintf(fds.both_fd, "Script done on %s\r\n", ctime(&t));
         if (!(cfg.options & OPT_quiet))
             ft_dprintf(STDOUT_FILENO, "Script done.\r\n");
     }

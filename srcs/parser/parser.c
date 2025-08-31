@@ -116,6 +116,7 @@ int parse(char **argv, parser_t *cfg)
             { /* --log-timing <file> */
                 if (!has_inline) { i++; if (!argv[i]) { perr("missing value for --log-timing\n"); return -1; } v = argv[i]; }
                 cfg->logtime = (char*)v;
+                cfg->options |= OPT_TIMING;
             }
             else if (LONGEQ("timing", name, namelen))
             { /* --timing[=<file>] */ /* what's the difference??? */
@@ -162,7 +163,7 @@ int parse(char **argv, parser_t *cfg)
             else if (LONGEQ("version", name, namelen)) { return 2; }
             else
             {
-                perr("unknown long option\n");
+                ft_dprintf(2, "ft_script: unrecognized option '%s'\n", name);
                 return -1;
             }
             continue;
@@ -219,6 +220,7 @@ int parse(char **argv, parser_t *cfg)
                         if (attached) { val = attached; p += ft_strlen(attached); }
                         else { i++; if (!argv[i]) { perr("missing value for -T\n"); return -1; } val = argv[i]; }
                         cfg->logtime = (char*)val;
+                        cfg->options |= OPT_TIMING;
                         break;
 
                     case 'm':
@@ -276,7 +278,7 @@ int parse(char **argv, parser_t *cfg)
     }
 
     if (!cfg->file && !cfg->infile && !cfg->outfile)
-        cfg->file = "typescript";
+        cfg->outfile = "typescript";
 
     return 0;
 }

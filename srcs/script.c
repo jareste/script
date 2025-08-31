@@ -426,10 +426,24 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
-    ret = fh_open_files(&fds, cfg.infile, cfg.outfile, cfg.file, cfg.logtime, cfg.options & OPT_timing, cfg.options & OPT_append ? 0 : 1);
+    ret = fh_open_files(&fds, &cfg);// cfg.infile, cfg.outfile, cfg.file, cfg.logtime, cfg.options & OPT_timing, cfg.options & OPT_append ? 0 : 1, cfg.options & OPT_force);
     if (ret == -1)
     {
         ft_dprintf(2, "Failed to open files\n");
+        return 1;
+    }
+    else if (ret == -2)
+    {
+        ft_dprintf(2, "ft_script: output file `typescript' is a link\r\n");
+        ft_dprintf(2, "Use --force if you really want to use it.\r\n");
+        ft_dprintf(2, "Program not started.\r\n");
+        return 1;
+    }
+    else if (ret == -3)
+    {
+        ft_dprintf(2, "ft_script: will not follow symbolic link\r\n");
+        ft_dprintf(2, "Use --force if you really want to use it.\r\n");
+        ft_dprintf(2, "Program not started.\r\n");
         return 1;
     }
 

@@ -89,7 +89,7 @@ int fh_open_files(open_fds* fds, parser_t* cfg)
     char* both = cfg->file;
     char* timefile = cfg->logtime;
     bool force = cfg->options & OPT_force;
-    int base_flags = O_CREAT | O_RDWR | (cfg->options & OPT_append ? 0 : O_TRUNC);
+    int base_flags;
     int tfd_flags;
 
     fds->in_fd = fds->out_fd = fds->both_fd = -1;
@@ -100,6 +100,7 @@ int fh_open_files(open_fds* fds, parser_t* cfg)
     fds->out_filename = out;
     fds->both_filename = both;
 
+    base_flags = (O_CREAT | O_RDWR | ((cfg->options & OPT_append) ? O_APPEND : O_TRUNC));
     if (in)
     {
         fds->in_fd = open_one(in, base_flags, force, /*check_hardlink=*/0);
@@ -267,7 +268,6 @@ void fh_write_time_header(char* time_str, char* term, char* tty, struct winsize 
     if (m_time_fd == -1)
         return;
 
-    (void)fds;
     if (m_advanced_logging == 0)
         return;
 
@@ -290,6 +290,9 @@ void fh_write_time_finals(int exit_code)
     time_t final_time;
 
     if (m_time_fd == -1)
+        return;
+
+    if (m_advanced_logging == 0)
         return;
 
     final_time = time(NULL);

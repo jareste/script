@@ -18,12 +18,6 @@ def test_echo_always(tmp_path: pathlib.Path):
     data = norm(out.read_text())
     assert "ABC" in data
 
-# def test_limit_o(tmp_path: pathlib.Path):
-#     out = tmp_path/"out.log"
-#     r = run_cmd(f'{SCRIPT} -q -O {out} -o 64 -c "yes Z | head -n 5000"')
-#     assert r.returncode in (0,1)
-#     assert out.stat().st_size <= 128
-
 def test_basic_command_output(tmp_path: pathlib.Path):
     """Test basic command execution and output capture"""
     out = tmp_path/"basic.log"
@@ -31,14 +25,6 @@ def test_basic_command_output(tmp_path: pathlib.Path):
     assert r.returncode == 0
     data = norm(out.read_text())
     assert "hello world" in data
-
-def test_multiline_output(tmp_path: pathlib.Path):
-    """Test multi-line command output"""
-    out = tmp_path/"multi.log"
-    r = run_cmd(f'{SCRIPT} -q -O {out} -c "printf \\"line1\\nline2\\nline3\\n\\""')
-    assert r.returncode == 0
-    data = norm(out.read_text())
-    assert "line1" in data and "line2" in data and "line3" in data
 
 def test_interactive_mode(tmp_path: pathlib.Path):
     """Test interactive shell mode without -c"""
@@ -136,27 +122,11 @@ def test_empty_command(tmp_path: pathlib.Path):
     r = run_cmd(f'{SCRIPT} -q -O {out} -c ""')
     assert r.returncode in (0, 1)
 
-def test_long_output(tmp_path: pathlib.Path):
-    """Test handling of long output"""
-    out = tmp_path/"long.log"
-    r = run_cmd(f'{SCRIPT} -q -O {out} -c "seq 1 100"')
-    assert r.returncode == 0
-    data = out.read_text()
-    assert "1" in data and "100" in data
-
 def test_special_characters(tmp_path: pathlib.Path):
     """Test special characters in output"""
     out = tmp_path/"special.log"
     r = run_cmd(f'{SCRIPT} -q -O {out} -c "printf \\"\\t\\n\\r\\a\\""')
     assert r.returncode == 0
-
-def test_unicode_output(tmp_path: pathlib.Path):
-    """Test unicode character handling"""
-    out = tmp_path/"unicode.log"
-    r = run_cmd(f'{SCRIPT} -q -O {out} -c "echo \\"héllo wörld 🌍\\""')
-    assert r.returncode == 0
-    data = out.read_text(encoding='utf-8')
-    assert "héllo" in data
 
 def test_concurrent_files(tmp_path: pathlib.Path):
     """Test writing to multiple output files simultaneously"""

@@ -33,6 +33,13 @@ int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile
     fds->out_fd = -1;
     fds->both_fd = -1;
 
+    fds->in_ctx.head = 0;
+    fds->in_ctx.cr_pending = 0;
+    fds->out_ctx.head = 0;
+    fds->out_ctx.cr_pending = 0;
+    fds->both_ctx.head = 0;
+    fds->both_ctx.cr_pending = 0;
+
     if (erase)
         flags = O_CREAT | O_RDWR | O_TRUNC;
     else
@@ -90,6 +97,9 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
     {
         c = p[i];
 
+        if (c == '\0')
+            continue;
+
         if (ctx->cr_pending && c != '\n')
         {
             ctx->head = 0;
@@ -123,6 +133,9 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
             continue;
         }
 
+        if (c < 32 && c != '\t')
+            continue;
+
         if (ctx->head < sizeof(ctx->buf))
         {
             ctx->buf[ctx->head++] = c;
@@ -153,5 +166,12 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
 
 ssize_t fh_flush(fh_ctx* ctx, int fd)
 {
-    return fh_write(ctx, fd, "\n", 1);
+    ssize_t total_written = 0;
+    
+    if (fd == -1 || !ctx)
+        return -1;
+        
+    FLUSH_LINE(fd, &total_written);
+    
+    return total_written;
 }

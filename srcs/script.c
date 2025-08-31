@@ -178,6 +178,8 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
         case -1:
             return -1;
     }
+    fh_write(&fds->both_ctx, fds->both_fd, "Final line done\n", ft_strlen("Final line done\n"));
+    fh_write(&fds->out_ctx, fds->out_fd, "Final line done\n", ft_strlen("Final line done\n"));
 
     fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
     fh_flush(&fds->out_ctx,  fds->out_fd);

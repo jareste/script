@@ -474,5 +474,6 @@ error:
     close(fds.both_fd);
     close(mfd);
     log_close();
+    sigh_tty_restore();
     return 1;
 }

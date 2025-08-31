@@ -124,6 +124,7 @@ int parse(char **argv, parser_t *cfg)
                     else v = "stderr";
                 }
                 cfg->logtime = (char*)v;
+                cfg->options |= OPT_timing;
             }
             else if (LONGEQ("logging-format", name, namelen))
             { /* --logging-format <name> */
@@ -186,9 +187,10 @@ int parse(char **argv, parser_t *cfg)
                         else
                         {
                             if (argv[i+1] && argv[i+1][0] != '-') { i++; val = argv[i]; }
-                            else val = "stderr";
+                            else val = NULL;
                         }
                         cfg->logtime = (char*)val;
+                        cfg->options |= OPT_timing;
                         break;
 
                     case 'I':

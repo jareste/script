@@ -378,7 +378,7 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
-    ret = fh_open_files(&fds, cfg.infile, cfg.outfile, cfg.file, cfg.logtime, cfg.options & OPT_append ? 0 : 1);
+    ret = fh_open_files(&fds, cfg.infile, cfg.outfile, cfg.file, cfg.logtime, cfg.options & OPT_timing, cfg.options & OPT_append ? 0 : 1);
     if (ret == -1)
     {
         ft_dprintf(2, "Failed to open files\n");

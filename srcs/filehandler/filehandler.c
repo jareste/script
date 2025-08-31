@@ -25,7 +25,7 @@
 static struct timespec m_last_entry_time;
 static int m_time_fd = -1;
 
-int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile, int erase)
+int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile, int time_on, int erase)
 {
     int flags;
 
@@ -66,11 +66,15 @@ int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile
             return -1;
     }
 
-    if (timefile)
+    if (timefile && time_on)
     {
         m_time_fd = open(timefile, O_CREAT | O_RDWR | O_TRUNC, 0644);
         if (m_time_fd == -1)
             return -1;
+    }
+    else if (time_on)
+    {
+        m_time_fd = STDOUT_FILENO;
         clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
     }
 

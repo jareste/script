@@ -30,8 +30,8 @@ typedef enum
 
 typedef enum
 {
-    LOG_ADVANCED,
-    LOG_CLASSIC
+    LOG_ADVANCED = 1,
+    LOG_CLASSIC = 2
 } log_format;
 
 typedef struct

@@ -227,6 +227,8 @@ int parse(char **argv, parser_t *cfg)
                         if (attached) { val = attached; p += ft_strlen(attached); }
                         else { i++; if (!argv[i]) { perr("missing value for -m\n"); return -1; } val = argv[i]; }
                         if (!m_streq(val,"classic") && !m_streq(val,"advanced")) { perr("invalid -m value\n"); return -1; }
+                        if (m_streq(val,"classic")) cfg->log = LOG_CLASSIC;
+                        else if (m_streq(val,"advanced")) cfg->log = LOG_ADVANCED;
                         break;
 
                     case 'c':

@@ -28,6 +28,15 @@
 
 static struct timespec m_last_entry_time;
 static int m_time_fd = -1;
+static int m_advanced_logging = 0;
+static char* m_timing_log_name = NULL;
+static time_t m_start_time;
+
+void fh_set_adv_logging()
+{
+    log_msg(LOG_LEVEL_INFO, "Advanced logging enabled\n");
+    m_advanced_logging = 1;
+}
 
 static int is_default_typescript(const char *path)
 {
@@ -87,6 +96,9 @@ int fh_open_files(open_fds* fds, parser_t* cfg)
     fds->in_ctx.head = fds->in_ctx.cr_pending = 0;
     fds->out_ctx.head = fds->out_ctx.cr_pending = 0;
     fds->both_ctx.head = fds->both_ctx.cr_pending = 0;
+    fds->in_filename = in;
+    fds->out_filename = out;
+    fds->both_filename = both;
 
     if (in)
     {
@@ -111,6 +123,7 @@ int fh_open_files(open_fds* fds, parser_t* cfg)
             tfd_flags = O_CREAT | O_RDWR | O_TRUNC;
             if (!force) tfd_flags |= O_NOFOLLOW;
 
+            m_timing_log_name = timefile;
             m_time_fd = open(timefile, tfd_flags, 0644);
             if (m_time_fd == -1)
             {
@@ -162,7 +175,12 @@ ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t coun
         clock_gettime(CLOCK_MONOTONIC, &new_time);
         time_dif_in_s = (new_time.tv_sec - m_last_entry_time.tv_sec)
                     + (new_time.tv_nsec - m_last_entry_time.tv_nsec) / 1e9;
-        ft_dprintf(m_time_fd, "%c %f", (char)type, time_dif_in_s);
+
+        if (m_advanced_logging == 1)
+            ft_dprintf(m_time_fd, "%c %f", (char)type, time_dif_in_s);
+        else
+            ft_dprintf(m_time_fd, "%f", time_dif_in_s);
+
         ft_dprintf(m_time_fd, " %d\n", (int)count);
         log_msg(LOG_LEVEL_DEBUG, "%f %d\n", time_dif_in_s, count);
         clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
@@ -242,4 +260,40 @@ ssize_t fh_flush(fh_ctx* ctx, int fd)
     FLUSH_LINE(fd, &total_written);
     
     return total_written;
+}
+
+void fh_write_time_header(char* time_str, char* term, char* tty, struct winsize ws, open_fds* fds)
+{
+    if (m_time_fd == -1)
+        return;
+
+    (void)fds;
+    if (m_advanced_logging == 0)
+        return;
+
+    ft_dprintf(m_time_fd, "H 0.000000 START_TIME %s\n", time_str);
+    ft_dprintf(m_time_fd, "H 0.000000 TERM %s\n", term ? term : "unknown");
+    ft_dprintf(m_time_fd, "H 0.000000 TTY %s\n", tty ? tty : "unknown");
+    ft_dprintf(m_time_fd, "H 0.000000 COLUMNS %d\n", ws.ws_col);
+    ft_dprintf(m_time_fd, "H 0.000000 LINES %d\n", ws.ws_row);
+    ft_dprintf(m_time_fd, "H 0.000000 TIMING_LOG %s\n", m_timing_log_name);
+    if (fds->in_filename)
+        ft_dprintf(m_time_fd, "H 0.000000 INPUT_FILE %s\n", fds->in_filename);
+    if (fds->out_filename)
+        ft_dprintf(m_time_fd, "H 0.000000 OUTPUT_FILE %s\n", fds->out_filename);
+
+    m_start_time = time(NULL);
+}
+
+void fh_write_time_finals(int exit_code)
+{
+    time_t final_time;
+
+    if (m_time_fd == -1)
+        return;
+
+    final_time = time(NULL);
+    log_msg(LOG_LEVEL_DEBUG, "Final time: %ld, start time: %ld\n", final_time, m_start_time);
+    ft_dprintf(m_time_fd, "H 0.000000 DURATION %d \n", final_time - m_start_time);
+    ft_dprintf(m_time_fd, "H 0.000000 EXIT_CODE %d\n", exit_code);
 }

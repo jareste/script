@@ -303,6 +303,7 @@ static void m_write_script_header(open_fds* fds, char* tty, char** envp, parser_
                 ws.ws_col,
                 ws.ws_row);
     }
+    fh_write_time_header(time_str, term, tty, ws, fds);
 }
 
 static void cleanup_child(pid_t child)
@@ -448,6 +449,11 @@ int main(int argc, char **argv, char **envp)
         goto error;
     }
 
+    log_msg(LOG_LEVEL_DEBUG, "Log type: %d, time file '%s'\n", cfg.log, cfg.logtime);
+    log_msg(LOG_LEVEL_DEBUG, "Log type: %d\n", cfg.log == LOG_ADVANCED && cfg.logtime);
+    if (cfg.log == LOG_ADVANCED && cfg.logtime)
+        fh_set_adv_logging();
+
     m_write_script_header(&fds, slave_path, envp, &cfg);
 
     sigh_init_signals();
@@ -471,6 +477,7 @@ int main(int argc, char **argv, char **envp)
         ft_dprintf(STDOUT_FILENO, "Script done.\r\n");
     }
 
+    fh_write_time_finals(exit_code);
     close(fds.both_fd);
     close(mfd);
     log_close();

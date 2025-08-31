@@ -81,7 +81,7 @@ int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile
     return 0;
 }
 
-ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
+ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
 {
     /* Usually we should always receive only one byte at a time.
      * That's bc no canonical. but just in case :) 
@@ -96,6 +96,9 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
 
     if (fd == -1 || (!buf && count))
         return -1;
+
+    if (flush)
+        return write(fd, buf, count);
 
     for (i = 0; i < count; i++)
     {
@@ -162,7 +165,6 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
         ft_dprintf(m_time_fd, " %d\n", (int)count);
         log_msg(LOG_LEVEL_DEBUG, "%f %d\n", time_dif_in_s, count);
         clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
-
     }
 
     return total_written;

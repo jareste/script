@@ -23,7 +23,7 @@ typedef struct
 } open_fds;
 
 ssize_t fh_flush(fh_ctx* ctx, int fd);
-ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count);
+ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush);
 int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile, int time_on, int erase);
 
 #endif /* FILEHANDLER_H */

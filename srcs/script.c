@@ -96,7 +96,7 @@ static int m_get_exit_code(pid_t child, int* exit_code, int* signal)
     return 0;
 }
 
-static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo)
+static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flush)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
@@ -163,8 +163,8 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo)
             if (echo)
                 write(stdout_fd, buf, n);
             /* write to file */
-            fh_write(&fds->both_ctx, fds->both_fd, buf, n);
-            fh_write(&fds->out_ctx, fds->out_fd, buf, n);
+            fh_write(&fds->both_ctx, fds->both_fd, buf, n, flush);
+            fh_write(&fds->out_ctx, fds->out_fd, buf, n, flush);
         }
     }
 
@@ -174,8 +174,9 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo)
     t = time(NULL);
     time_str = ctime(&t);
     *strchr(time_str, '\n') = '\0';
-    ft_dprintf(fds->both_fd, "Script done on %s ", time_str);
-    ft_dprintf(fds->out_fd, "Script done on %s ", time_str);
+    ft_dprintf(fds->both_fd, "\nScript done on %s ", time_str);
+    ft_dprintf(fds->out_fd, "\nScript done on %s ", time_str);
+    ft_dprintf(fds->in_fd, "\nScript done on %s ", time_str);
 
     if (r == 0)
         r = m_get_exit_code(child, &exit_code, &signal);
@@ -185,6 +186,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo)
             log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
             ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
             ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
+            ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
             break;
         case -1:
             return -1;
@@ -194,11 +196,13 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo)
         default:
             ft_dprintf(fds->both_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
             ft_dprintf(fds->out_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+            ft_dprintf(fds->in_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
             break;
     }
 
     ft_dprintf(fds->both_fd, "\r\n");
     ft_dprintf(fds->out_fd, "\r\n");
+    ft_dprintf(fds->in_fd, "\r\n");
 
     return 0;
 }
@@ -396,7 +400,9 @@ int main(int argc, char **argv, char **envp)
         return 1;
     }
 
-    m_copy_loop(mfd, &fds, ret, cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO)));
+    bool echo = cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO));
+    bool flush = cfg.options & OPT_fflush;
+    m_copy_loop(mfd, &fds, ret, echo, flush);
 
     // waitpid(ret, &status, 0);
 

@@ -29,6 +29,8 @@ int	ft_check_format(int fd, char format, va_list args)
 		c_printed = ft_print_uinteger(fd, va_arg(args, unsigned int));
 	else if (format == 'x' || format == 'X')
 		c_printed = ft_print_hex(fd, va_arg(args, unsigned int), format, 0);
+	else if (format == 'f')
+		c_printed = ft_print_double(fd, va_arg(args, double), 6);
 	else if (format == '%')
 	{
 		c_printed = ft_print_char_fd(fd, '%', 1);

@@ -64,6 +64,34 @@ static int m_pty_open_master(int *mfd, int *sfd, char slave_path[64])
 
     *mfd = master;
     *sfd = slave;
+    sigh_set_slavefd(slave);
+    return 0;
+}
+
+static int m_get_exit_code(pid_t child, int* exit_code, int* signal)
+{
+    int r;
+    int status;
+
+    if (!exit_code || !signal)
+        return -1;
+
+    r = waitpid(child, &status, WNOHANG);
+    if (r == child)
+    {
+        if (WIFEXITED(status))
+        {
+            *exit_code = WEXITSTATUS(status);
+            log_msg(LOG_LEVEL_DEBUG, "Child exited with code: %d\n", *exit_code);
+            return 1;
+        }
+        else if (WIFSIGNALED(status))
+        {
+            *signal = WTERMSIG(status);
+            log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", *signal);
+            return 2;
+        }
+    }
     return 0;
 }
 
@@ -72,7 +100,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
     int stdout_fd = STDOUT_FILENO;
-    int status;
+    // int status;
     int max_fd;
     int ret;
     int exit_code = -1;
@@ -83,9 +111,12 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
 
     while (true)
     {
-        r = waitpid(child, &status, WNOHANG);
-        log_msg(LOG_LEVEL_DEBUG, "Cmd exit code=%d\n", WEXITSTATUS(status));
-        
+        r = m_get_exit_code(child, &exit_code, &signal);
+        if (r == 1 || r == 2)
+            break;
+        else if (r == -1)
+            return -1;
+
         FD_ZERO(&rfds);
         FD_SET(stdin_fd, &rfds);
         FD_SET(mfd, &rfds);
@@ -94,6 +125,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
         ret = select(max_fd, &rfds, NULL, NULL, NULL);
         if (ret < 0)
         {
+            log_msg(LOG_LEVEL_ERROR, "select() failed: %s\n", strerror(errno));
             if (errno == EINTR) continue;
             return -1;
         }
@@ -113,6 +145,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
             {
                 write(mfd, buf, n);
                 write(fds->in_fd, buf, n);
+                log_msg(LOG_LEVEL_DEBUG, "Wrote %zd bytes from stdin to master\n", n);
             }
         }
         /* master -> stdout + file */
@@ -130,44 +163,24 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child)
             fh_write(&fds->both_ctx, fds->both_fd, buf, n);
             fh_write(&fds->out_ctx, fds->out_fd, buf, n);
         }
-
-        if (r == child)
-        {
-            if (WIFEXITED(status))
-            {
-                exit_code = WEXITSTATUS(status);
-                log_msg(LOG_LEVEL_DEBUG, "Child 1exited with code: %d\n", exit_code);
-                return exit_code;
-            }
-            else if (WIFSIGNALED(status))
-            {
-                signal = WTERMSIG(status);
-                log_msg(LOG_LEVEL_DEBUG, "Child 1killed by signal: %d\n", signal);
-                return 128 + signal;
-            }
-        }
     }
 
-    r = waitpid(child, &status, WNOHANG);
-    log_msg(LOG_LEVEL_DEBUG, "Cmd exit code=%d\n", WEXITSTATUS(status));
-
-    if (r == child)
+    if (r == 0)
+        r = m_get_exit_code(child, &exit_code, &signal);
+    switch (r)
     {
-        if (WIFEXITED(status))
-        {
-            exit_code = WEXITSTATUS(status);
-            log_msg(LOG_LEVEL_DEBUG, "Child 2exited with code: %d\n", exit_code);
-            return exit_code;
-        }
-        else if (WIFSIGNALED(status))
-        {
-            signal = WTERMSIG(status);
-            log_msg(LOG_LEVEL_DEBUG, "Child 2killed by signal: %d\n", signal);
-            return 128 + signal;
-        }
+        case 1:
+            log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
+            break;
+        case 2:
+            log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", signal);
+            break;
+        case -1:
+            return -1;
     }
 
     fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
+    fh_flush(&fds->out_ctx,  fds->out_fd);
     return 0;
 }
 
@@ -253,67 +266,18 @@ static void m_write_script_header(open_fds* fds, char* tty, char** envp, parser_
     }
 }
 
-int main(int argc, char **argv, char **envp)
+static int m_exec_child(char** envp, parser_t* cfg, int sfd, int mfd)
 {
-    int quiet = 0;
-    time_t t;
     pid_t pid;
-    int status;
-    open_fds fds;
-    int mfd;
-    int sfd;
-    int ret;
     char* sh_abs;
     char* sh;
     char* args[4];
-    char slave_path[64] = { 0 };;
-    parser_t cfg;
 
-    (void)argc;
-
-    ret = parse(argv, &cfg);
-    if (ret == -1)
-    {
-        ft_dprintf(2, "Try 'ft_script --help' for more information.\n");
-        return 1;
-    }
-    else if (ret == 1)
-    {
-        ft_dprintf(2, "Help requested\n");
-        return 0;
-    }
-    else if (ret == 2)
-    {
-        ft_dprintf(2, "ft_script from jareste- 1.0.0 (replicates script from util-linux 2.38.1)\n");
-        return 0;
-    }
-
-    log_init();
-
-    if (m_pty_open_master(&mfd, &sfd, slave_path) == -1)
-    {
-        ft_dprintf(2, "Open pty master failed\n");
-        return 1;
-    }
-
-    sigh_set_slavefd(sfd);
-
-    ret = fh_open_files(&fds, cfg.infile, cfg.outfile, cfg.file, cfg.options & OPT_append ? 0 : 1);
-    if (ret == -1)
-    {
-        ft_dprintf(2, "Failed to open files\n");
-        return 1;
-    }
-
-    m_write_script_header(&fds, slave_path, envp, &cfg);
-
-    sigh_init_signals();
-
-    pid = fork();
+   pid = fork();
     if (pid < 0)
     {
         ft_dprintf(2, "Fork failed\n");
-        return 1;
+        return -1;
     }
 
     if (pid == 0)
@@ -333,13 +297,13 @@ int main(int argc, char **argv, char **envp)
         dup2(sfd, STDERR_FILENO);
         close(mfd);
 
-        if (cfg.command)
+        if (cfg->command)
         {
             sh_abs = m_ft_getenv(envp, "SHELL");
             sh = m_get_basename(sh_abs);
             args[0] = sh;
             args[1] = "-c";
-            args[2] = (char*)cfg.command;
+            args[2] = (char*)cfg->command;
             args[3] = NULL;
             execve(sh_abs, args, envp);
         }
@@ -358,14 +322,70 @@ int main(int argc, char **argv, char **envp)
     }
 
     close(sfd);
-    m_copy_loop(mfd, &fds, pid);
+    return pid;
+}
 
-    waitpid(pid, &status, 0);
+int main(int argc, char **argv, char **envp)
+{
+    int quiet = 0;
+    time_t t;
+    open_fds fds;
+    int mfd;
+    int sfd;
+    int ret;
+    char slave_path[64] = { 0 };;
+    parser_t cfg;
+
+    (void)argc;
+
+    ret = parse(argv, &cfg);
+    switch (ret)
+    {
+        case -1:
+            ft_dprintf(2, "Failed to parse arguments\n");
+            return 1;
+        case 1:
+            ft_dprintf(2, "Help requested\n");
+            return 0;
+        case 2:
+            ft_dprintf(2, "ft_script from jareste- 1.0.0 (replicates script from util-linux 2.38.1)\n");
+            return 0;
+    }
+
+    log_init();
+
+    if (m_pty_open_master(&mfd, &sfd, slave_path) == -1)
+    {
+        ft_dprintf(2, "Open pty master failed\n");
+        return 1;
+    }
+
+    ret = fh_open_files(&fds, cfg.infile, cfg.outfile, cfg.file, cfg.logtime, cfg.options & OPT_append ? 0 : 1);
+    if (ret == -1)
+    {
+        ft_dprintf(2, "Failed to open files\n");
+        return 1;
+    }
+
+    m_write_script_header(&fds, slave_path, envp, &cfg);
+
+    sigh_init_signals();
+
+    ret = m_exec_child(envp, &cfg, sfd, mfd);
+    if (ret == -1)
+    {
+        ft_dprintf(2, "Failed to execute child process\n");
+        return 1;
+    }
+
+    m_copy_loop(mfd, &fds, ret);
+
+    // waitpid(ret, &status, 0);
 
     if (!quiet)
     {
         t = time(NULL);
-        ft_dprintf(fds.both_fd, "\nScript done on %s\r\n", ctime(&t));
+        ft_dprintf(fds.both_fd, "Script done on %s\r\n", ctime(&t));
         if (!(cfg.options & OPT_quiet))
             ft_dprintf(STDOUT_FILENO, "Script done.\r\n");
     }

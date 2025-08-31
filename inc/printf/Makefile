@@ -24,6 +24,7 @@ SRCS = ft_printf.c \
 	ft_print_decimal.c \
 	ft_print_hex.c \
 	ft_print_string.c \
+	ft_print_double.c \
 	ft_print_char_fd.c
 
 OBJS := $(SRCS:.c=.o)

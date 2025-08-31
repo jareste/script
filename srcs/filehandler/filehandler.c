@@ -1,5 +1,10 @@
 #include "filehandler.h"
+#include <sys/time.h>
 #include <fcntl.h>
+#include <time.h>
+#include <unistd.h>
+#include <ft_printf.h>
+#include "../log/log.h"
 
 #define FLUSH_LINE(fd, total_written) do { \
     if (ctx->head != 0) { \
@@ -17,7 +22,10 @@
     } \
 } while(0)
 
-int fh_open_files(open_fds* fds, char* in, char* out, char* both, int erase)
+static struct timespec m_last_entry_time;
+static int m_time_fd = -1;
+
+int fh_open_files(open_fds* fds, char* in, char* out, char* both, char* timefile, int erase)
 {
     int flags;
 
@@ -51,6 +59,14 @@ int fh_open_files(open_fds* fds, char* in, char* out, char* both, int erase)
             return -1;
     }
 
+    if (timefile)
+    {
+        m_time_fd = open(timefile, O_CREAT | O_RDWR | O_TRUNC, 0644);
+        if (m_time_fd == -1)
+            return -1;
+        clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
+    }
+
     return 0;
 }
 
@@ -64,6 +80,8 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
     size_t i;
     ssize_t total_written = 0;
     ssize_t w;
+    struct timespec new_time;
+    double time_dif_in_s;
 
     if (fd == -1 || (!buf && count))
         return -1;
@@ -117,10 +135,23 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count)
         }
     }
 
+    /* Flag 'T' and 't' */
+    if (m_time_fd != -1)
+    {
+        clock_gettime(CLOCK_MONOTONIC, &new_time);
+        time_dif_in_s = (new_time.tv_sec - m_last_entry_time.tv_sec)
+                    + (new_time.tv_nsec - m_last_entry_time.tv_nsec) / 1e9;
+        ft_dprintf(m_time_fd, "%f", time_dif_in_s);
+        ft_dprintf(m_time_fd, " %d\n", (int)count);
+        log_msg(LOG_LEVEL_DEBUG, "%f %d\n", time_dif_in_s, count);
+        clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
+
+    }
+
     return total_written;
 }
 
 ssize_t fh_flush(fh_ctx* ctx, int fd)
 {
-    return fh_write(ctx, fd, (const void*)"", 0);
+    return fh_write(ctx, fd, "\n", 1);
 }

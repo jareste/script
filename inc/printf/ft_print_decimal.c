@@ -13,22 +13,41 @@
 #include "ft_printf.h"
 #include <libft.h>
 
-int	ft_print_decimal(int fd, int n)
+static int ft_print_decimal_recursive(int fd, long n)
 {
-	char	*num;
-	int		c_printed;
-	char	buf[20];
+    int count = 0;
+    int temp;
+    
+    if (n > 9)
+    {
+        temp = ft_print_decimal_recursive(fd, n / 10);
+        if (temp == -1)
+            return (-1);
+        count += temp;
+    }
+    
+    if (ft_print_char_fd(fd, '0' + (n % 10), 1) == -1)
+        return (-1);
+    
+    return (count + 1);
+}
 
-	c_printed = 0;
-	num = ft_itoa_nc(n, buf);
-	if (!num)
-		return (-1);
-	c_printed = ft_print_string(fd, num);
-	if (c_printed == -1)
-	{
-		free(num);
-		return (-1);
-	}
-	free(num);
-	return (c_printed);
+int ft_print_decimal(int fd, int n)
+{
+    int count = 0;
+    long ln = n;
+    
+    if (n < 0)
+    {
+        if (ft_print_char_fd(fd, '-', 1) == -1)
+            return (-1);
+        count++;
+        ln = -ln;
+    }
+    
+    int temp = ft_print_decimal_recursive(fd, ln);
+    if (temp == -1)
+        return (-1);
+    
+    return (count + temp);
 }

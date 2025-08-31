@@ -25,5 +25,6 @@ int	ft_dprintf(int fd, const char *s, ...);
 int	ft_print_ptr(int fd, void *ptr);
 int	ft_print_hex(int fd, unsigned long int n, char format, int c_printed);
 int	ft_print_char_fd(int fd, int c, int fd2);
+int ft_print_double(int fd, double n, int precision);
 
 #endif

@@ -97,14 +97,13 @@ static int m_get_exit_code(pid_t child, int* exit_code, int* signal)
     return 0;
 }
 
-static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flush, ssize_t out_limit)
+static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flush, ssize_t out_limit, int* exit_code)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
     int stdout_fd = STDOUT_FILENO;
     int max_fd;
     int ret;
-    int exit_code = -1;
     int signal = -1;
     fd_set rfds;
     pid_t r;
@@ -116,7 +115,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
     log_msg(LOG_LEVEL_DEBUG, "starting copy loop with echo [%d], flush [%d], out_limit [%zd]\n", echo, flush, out_limit);
     while (true)
     {
-        r = m_get_exit_code(child, &exit_code, &signal);
+        r = m_get_exit_code(child, exit_code, &signal);
         if (r == 1 || r == 2)
             break;
         else if (r == -1)
@@ -195,14 +194,14 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
     else
     {
         if (r == 0)
-            r = m_get_exit_code(child, &exit_code, &signal);
+            r = m_get_exit_code(child, exit_code, &signal);
         switch (r)
         {
             case 1:
                 log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
-                ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", exit_code);
-                ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", exit_code);
-                ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", exit_code);
+                ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", *exit_code);
+                ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", *exit_code);
+                ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", *exit_code);
                 break;
             case -1:
                 return -1;
@@ -397,8 +396,14 @@ static int m_parse_error(int ret)
         case -3:
             ft_dprintf(2, "Another type of error occurred\n");
             return 0;
+        case 2:
+            ft_dprintf(2, "ft_script from jareste- 1.0.0 (replicates script from util-linux 2.38.1)\n");
+            return 1;
+        case 1:
+            ft_dprintf(2, "%s", HELP_MSG);
+            return 1;
     }
-    return 0;
+    return ret;
 }
 
 int main(int argc, char **argv, char **envp)
@@ -407,6 +412,7 @@ int main(int argc, char **argv, char **envp)
     int mfd = -1;
     int sfd;
     int ret;
+    int exit_code = -1;
     pid_t child;
     char slave_path[64] = { 0 };;
     parser_t cfg;
@@ -451,7 +457,7 @@ int main(int argc, char **argv, char **envp)
 
     echo = cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO));
     flush = cfg.options & OPT_fflush;
-    ret = m_copy_loop(mfd, &fds, child, echo, flush, cfg.outsize);
+    ret = m_copy_loop(mfd, &fds, child, echo, flush, cfg.outsize, &exit_code);
 
     if (ret == 2)
         cleanup_child(child);
@@ -468,6 +474,8 @@ int main(int argc, char **argv, char **envp)
     close(mfd);
     log_close();
     sigh_tty_restore();
+    if (cfg.options & OPT_ereturnchild)
+        return exit_code;
     return 0;
 
 error:

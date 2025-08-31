@@ -29,12 +29,13 @@
 
 static int m_pty_open_master(int *mfd, int *sfd, char slave_path[64])
 {
-    int master = open("/dev/ptmx", O_RDWR | O_NOCTTY);
+    int master;
     int unlock = 0;
     int ptn;
     int slave;
     char itoa_buf[20] = { 0 };
 
+    master = open("/dev/ptmx", O_RDWR | O_NOCTTY);
     if (master < 0) return -1;
 
     /* unlock slave (0 = unlock) */
@@ -138,9 +139,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
         {
             n = read(stdin_fd, buf, sizeof(buf));
             if (n <= 0)
-            {
-                /* EOF on stdin -> shutdown write side to child */
-                // shutdown(mfd, SHUT_WR); /* not all kernels support on pty; ignore errors */
+            { /* EOF on stdin -> shutdown write side to child */
                 write(stdout_fd, "exit\r\n", 7);
                 write(mfd, "exit\r\n", 7);
                 break;
@@ -180,30 +179,30 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
     time_str = ctime(&t);
     *strchr(time_str, '\n') = '\0';
 
+    ft_dprintf(fds->both_fd, "\nScript done on %s ", time_str);
+    ft_dprintf(fds->out_fd, "\nScript done on %s ", time_str);
+    ft_dprintf(fds->in_fd, "\nScript done on %s ", time_str);
+
     if (total_written >= out_limit && (out_limit != 0))
-    {
-        ft_dprintf(fds->both_fd, "\nScript done on %s [<max output size exceeded>]\r\n", time_str);
-        ft_dprintf(fds->out_fd, "\nScript done on %s [<max output size exceeded>]\r\n", time_str);
-        ft_dprintf(fds->in_fd, "\nScript done on %s [<max output size exceeded>]\r\n", time_str);
+    { /* max output exceeded */
+        ft_dprintf(fds->both_fd, "[<max output size exceeded>]\r\n");
+        ft_dprintf(fds->out_fd, "[<max output size exceeded>]\r\n");
+        ft_dprintf(fds->in_fd, "[<max output size exceeded>]\r\n");
 
         kill(SIGTERM, child);
         return 2;
     }
     else
     {
-        ft_dprintf(fds->both_fd, "\nScript done on %s ", time_str);
-        ft_dprintf(fds->out_fd, "\nScript done on %s ", time_str);
-        ft_dprintf(fds->in_fd, "\nScript done on %s ", time_str);
-
         if (r == 0)
             r = m_get_exit_code(child, &exit_code, &signal);
         switch (r)
         {
             case 1:
                 log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
-                ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
-                ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
-                ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
+                ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", exit_code);
+                ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", exit_code);
+                ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]\r\n", exit_code);
                 break;
             case -1:
                 return -1;
@@ -211,16 +210,12 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
                 log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", signal);
                 /* fallthrough */ /* KCH */
             default:
-                ft_dprintf(fds->both_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
-                ft_dprintf(fds->out_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
-                ft_dprintf(fds->in_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+                ft_dprintf(fds->both_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]\r\n");
+                ft_dprintf(fds->out_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]\r\n");
+                ft_dprintf(fds->in_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]\r\n");
                 break;
         }
     }
-
-    ft_dprintf(fds->both_fd, "\r\n");
-    ft_dprintf(fds->out_fd, "\r\n");
-    ft_dprintf(fds->in_fd, "\r\n");
 
     return 0;
 }
@@ -324,7 +319,6 @@ static void cleanup_child(pid_t child)
             log_msg(LOG_LEVEL_DEBUG, "Force killing child process %d\n", child);
             kill(child, SIGKILL);
         }
-        
 
         waitpid(child, NULL, WNOHANG);
         child = 0;
@@ -390,10 +384,27 @@ static int m_exec_child(char** envp, parser_t* cfg, int sfd, int mfd)
     return pid;
 }
 
+static int m_parse_error(int ret)
+{
+    switch (ret)
+    {
+        case -1:
+            ft_dprintf(2, "Unknown error occurred\n");
+            return 1;
+        case -2:
+            ft_dprintf(2, "Symbolic link error occurred\n");
+            return 0;
+        case -3:
+            ft_dprintf(2, "Another type of error occurred\n");
+            return 0;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv, char **envp)
 {
     open_fds fds;
-    int mfd;
+    int mfd = -1;
     int sfd;
     int ret;
     pid_t child;
@@ -405,46 +416,29 @@ int main(int argc, char **argv, char **envp)
     (void)argc;
 
     ret = parse(argv, &cfg);
-    switch (ret)
-    {
-        case -1:
-            ft_dprintf(2, "Try 'ft_script --help' for more information.\n");
-            return 1;
-        case 1:
-            ft_dprintf(2, "%s", HELP_MSG);
-            return 0;
-        case 2:
-            ft_dprintf(2, "ft_script from jareste- 1.0.0 (replicates script from util-linux 2.38.1)\n");
-            return 0;
-    }
+    if (ret != 0)
+        return m_parse_error(ret);
 
     log_init();
 
     if (m_pty_open_master(&mfd, &sfd, slave_path) == -1)
-    {
-        ft_dprintf(2, "Open pty master failed\n");
-        return 1;
-    }
+        goto error;
 
-    ret = fh_open_files(&fds, &cfg);// cfg.infile, cfg.outfile, cfg.file, cfg.logtime, cfg.options & OPT_timing, cfg.options & OPT_append ? 0 : 1, cfg.options & OPT_force);
+    ret = fh_open_files(&fds, &cfg);
     if (ret == -1)
-    {
-        ft_dprintf(2, "Failed to open files\n");
-        return 1;
+    { /* UNKNOWN error*/
+        goto error;
     }
-    else if (ret == -2)
-    {
-        ft_dprintf(2, "ft_script: output file `typescript' is a link\r\n");
+    else if (ret == -2 || ret == -3)
+    { /* Simlink related error. */
+        if (ret == -2)
+            ft_dprintf(2, "ft_script: output file `typescript' is a link\r\n");
+        else
+            ft_dprintf(2, "ft_script: will not follow symbolic link\r\n");
+
         ft_dprintf(2, "Use --force if you really want to use it.\r\n");
         ft_dprintf(2, "Program not started.\r\n");
-        return 1;
-    }
-    else if (ret == -3)
-    {
-        ft_dprintf(2, "ft_script: will not follow symbolic link\r\n");
-        ft_dprintf(2, "Use --force if you really want to use it.\r\n");
-        ft_dprintf(2, "Program not started.\r\n");
-        return 1;
+        goto error;
     }
 
     m_write_script_header(&fds, slave_path, envp, &cfg);
@@ -453,10 +447,7 @@ int main(int argc, char **argv, char **envp)
 
     child = m_exec_child(envp, &cfg, sfd, mfd);
     if (child == -1)
-    {
-        ft_dprintf(2, "Failed to execute child process\n");
-        return 1;
-    }
+        goto error;
 
     echo = cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO));
     flush = cfg.options & OPT_fflush;
@@ -478,4 +469,10 @@ int main(int argc, char **argv, char **envp)
     log_close();
     sigh_tty_restore();
     return 0;
+
+error:
+    close(fds.both_fd);
+    close(mfd);
+    log_close();
+    return 1;
 }

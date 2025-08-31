@@ -47,6 +47,50 @@ int	ft_atoi(const char *str)
 		return (-result);
 	return (result);
 }
+
+ssize_t	ft_atossize(const char *str)
+{
+    int		i;
+    int		neg;
+    ssize_t	result;
+    ssize_t	prev;
+
+    i = 0;
+    result = 0;
+    neg = 0;
+    while (ft_isspace(str[i]))
+        i++;
+    if (str[i] == '-')
+    {
+        neg = 1;
+        i++;
+    }
+    else if (str[i] == '+')
+        i++;
+    while (str[i] >= '0' && str[i] <= '9')
+    {
+        prev = result;
+        result = (result * 10) + (str[i] - '0');
+        
+        // Check for overflow
+        if (result < prev)
+        {
+            if (neg)
+                return (SSIZE_MIN);
+            else
+                return (SSIZE_MAX);
+        }
+        i++;
+    }
+    if (neg == 1)
+    {
+        // Check for underflow
+        if (result > SSIZE_MAX)
+            return (SSIZE_MIN);
+        return (-result);
+    }
+    return (result);
+}
 /*
  
 #include <stdio.h>

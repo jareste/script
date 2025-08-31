@@ -135,8 +135,7 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
             ctx->cr_pending = 0;
             FLUSH_LINE(fd, &total_written);
             w = write(fd, "\n", 1);
-            if (w > 0)
-                total_written += w;
+            total_written += w;
             continue;
         }
 
@@ -146,6 +145,7 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
         if (ctx->head < sizeof(ctx->buf))
         {
             ctx->buf[ctx->head++] = c;
+            total_written += 1;
         }
         else
         {

@@ -16,7 +16,16 @@
 # include <stdlib.h>
 # include <unistd.h>
 
+#ifndef SSIZE_MAX
+#define SSIZE_MAX ((ssize_t)~0U >> 1)
+#endif
+#ifndef SSIZE_MIN
+#define SSIZE_MIN (-(SSIZE_MAX + 1))
+#endif
+
+
 int		ft_atoi(const char *str);
+ssize_t	ft_atossize(const char *str);
 void	ft_bzero(void *s, size_t n);
 int		ft_isalnum(int c);
 int		ft_isalpha(int c);

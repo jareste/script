@@ -96,7 +96,7 @@ static int m_get_exit_code(pid_t child, int* exit_code, int* signal)
     return 0;
 }
 
-static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flush)
+static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flush, ssize_t out_limit)
 {
     char buf[4096];
     int stdin_fd = STDIN_FILENO;
@@ -110,7 +110,9 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
     ssize_t n;
     time_t t;
     char* time_str;
+    ssize_t total_written = 0;
 
+    log_msg(LOG_LEVEL_DEBUG, "starting copy loop with echo [%d], flush [%d], out_limit [%zd]\n", echo, flush, out_limit);
     while (true)
     {
         r = m_get_exit_code(child, &exit_code, &signal);
@@ -163,41 +165,57 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
             if (echo)
                 write(stdout_fd, buf, n);
             /* write to file */
-            fh_write(&fds->both_ctx, fds->both_fd, buf, n, flush);
+            total_written += fh_write(&fds->both_ctx, fds->both_fd, buf, n, flush);
             fh_write(&fds->out_ctx, fds->out_fd, buf, n, flush);
         }
+
+        if (total_written >= out_limit && (out_limit != 0))
+            break;
     }
 
     fh_flush(&fds->both_ctx, fds->both_fd); /* I think it's not needed tbh */
-    fh_flush(&fds->out_ctx,  fds->out_fd);
+    fh_flush(&fds->out_ctx, fds->out_fd);
 
     t = time(NULL);
     time_str = ctime(&t);
     *strchr(time_str, '\n') = '\0';
-    ft_dprintf(fds->both_fd, "\nScript done on %s ", time_str);
-    ft_dprintf(fds->out_fd, "\nScript done on %s ", time_str);
-    ft_dprintf(fds->in_fd, "\nScript done on %s ", time_str);
 
-    if (r == 0)
-        r = m_get_exit_code(child, &exit_code, &signal);
-    switch (r)
+    if (total_written >= out_limit && (out_limit != 0))
     {
-        case 1:
-            log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
-            ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
-            ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
-            ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
-            break;
-        case -1:
-            return -1;
-        case 2:
-            log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", signal);
-            /* fallthrough */ /* KCH */
-        default:
-            ft_dprintf(fds->both_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
-            ft_dprintf(fds->out_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
-            ft_dprintf(fds->in_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
-            break;
+        ft_dprintf(fds->both_fd, "\nScript done on %s [<max output size exceeded>]\r\n", time_str);
+        ft_dprintf(fds->out_fd, "\nScript done on %s [<max output size exceeded>]\r\n", time_str);
+        ft_dprintf(fds->in_fd, "\nScript done on %s [<max output size exceeded>]\r\n", time_str);
+
+        kill(SIGTERM, child);
+        return 2;
+    }
+    else
+    {
+        ft_dprintf(fds->both_fd, "\nScript done on %s ", time_str);
+        ft_dprintf(fds->out_fd, "\nScript done on %s ", time_str);
+        ft_dprintf(fds->in_fd, "\nScript done on %s ", time_str);
+
+        if (r == 0)
+            r = m_get_exit_code(child, &exit_code, &signal);
+        switch (r)
+        {
+            case 1:
+                log_msg(LOG_LEVEL_DEBUG, "Child exited!!!!\n");
+                ft_dprintf(fds->both_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
+                ft_dprintf(fds->out_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
+                ft_dprintf(fds->in_fd, "[COMMAND_EXIT_CODE=\"%d\"]", exit_code);
+                break;
+            case -1:
+                return -1;
+            case 2:
+                log_msg(LOG_LEVEL_DEBUG, "Child killed by signal: %d\n", signal);
+                /* fallthrough */ /* KCH */
+            default:
+                ft_dprintf(fds->both_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+                ft_dprintf(fds->out_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+                ft_dprintf(fds->in_fd, "\b\b [COMMAND_EXIT_CODE=\"0\"]");
+                break;
+        }
     }
 
     ft_dprintf(fds->both_fd, "\r\n");
@@ -240,14 +258,17 @@ static char* m_get_basename(const char* path)
 static void m_write_script_header(open_fds* fds, char* tty, char** envp, parser_t* cfg)
 {
     struct winsize ws;
-    time_t now = time(NULL);
-    char time_str[64];
+    time_t t;
     char *term = m_ft_getenv(envp, "TERM");
     int i;
     int fd;
-    
-    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S%z", localtime(&now));
-    
+    char* time_str;
+
+    t = time(NULL);
+    time_str = ctime(&t);
+    *strchr(time_str, '\n') = '\0';
+
+
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
     {
         ws.ws_col = 80;
@@ -280,12 +301,33 @@ static void m_write_script_header(open_fds* fds, char* tty, char** envp, parser_
             break;
         }
 
-        dprintf(fd, "Script started on %s [TERM=\"%s\" TTY=\"%s\" COLUMNS=\"%d\" LINES=\"%d\"]\n",
+        ft_dprintf(fd, "Script started on %s [TERM=\"%s\" TTY=\"%s\" COLUMNS=\"%d\" LINES=\"%d\"]\n",
                 time_str,
                 term ? term : "unknown",
                 tty ? tty : "unknown", 
                 ws.ws_col,
                 ws.ws_row);
+    }
+}
+
+static void cleanup_child(pid_t child)
+{
+    if (child > 0)
+    {
+        log_msg(LOG_LEVEL_DEBUG, "Cleaning up child process %d\n", child);
+        kill(child, SIGTERM);
+
+        usleep(100000);
+
+        if (kill(child, 0) == 0)
+        {
+            log_msg(LOG_LEVEL_DEBUG, "Force killing child process %d\n", child);
+            kill(child, SIGKILL);
+        }
+        
+
+        waitpid(child, NULL, WNOHANG);
+        child = 0;
     }
 }
 
@@ -350,13 +392,15 @@ static int m_exec_child(char** envp, parser_t* cfg, int sfd, int mfd)
 
 int main(int argc, char **argv, char **envp)
 {
-    int quiet = 0;
     open_fds fds;
     int mfd;
     int sfd;
     int ret;
+    pid_t child;
     char slave_path[64] = { 0 };;
     parser_t cfg;
+    bool echo;
+    bool flush;
 
     (void)argc;
 
@@ -393,26 +437,31 @@ int main(int argc, char **argv, char **envp)
 
     sigh_init_signals();
 
-    ret = m_exec_child(envp, &cfg, sfd, mfd);
-    if (ret == -1)
+    child = m_exec_child(envp, &cfg, sfd, mfd);
+    if (child == -1)
     {
         ft_dprintf(2, "Failed to execute child process\n");
         return 1;
     }
 
-    bool echo = cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO));
-    bool flush = cfg.options & OPT_fflush;
-    m_copy_loop(mfd, &fds, ret, echo, flush);
+    echo = cfg.echo == ECHO_ALWAYS || (cfg.echo == ECHO_AUTO && isatty(STDIN_FILENO));
+    flush = cfg.options & OPT_fflush;
+    ret = m_copy_loop(mfd, &fds, child, echo, flush, cfg.outsize);
 
-    // waitpid(ret, &status, 0);
+    if (ret == 2)
+        cleanup_child(child);
 
-    if (!quiet)
+    if (!(cfg.options & OPT_quiet))
     {
-        if (!(cfg.options & OPT_quiet))
-            ft_dprintf(STDOUT_FILENO, "Script done.\r\n");
+        if (ret == 2)
+            ft_dprintf(STDOUT_FILENO, "Script terminated, max output files size %u exceeded.\n", (unsigned int)cfg.outsize); /* dont want to create %zu just for this. */
+
+        ft_dprintf(STDOUT_FILENO, "Script done.\r\n");
     }
+
     close(fds.both_fd);
     close(mfd);
+    log_close();
     sigh_tty_restore();
     return 0;
 }

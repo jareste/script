@@ -71,7 +71,7 @@ int parse(char **argv, parser_t *cfg)
     cfg->infile = NULL;
     cfg->outfile = NULL;
     cfg->logtime = NULL;
-    cfg->outsize = -1;
+    cfg->outsize = 0;
 
     if (argv && argv[0])
         i = 1;
@@ -155,7 +155,7 @@ int parse(char **argv, parser_t *cfg)
             else if (LONGEQ("output-limit", name, namelen))
             { /* --output-limit <size> */
                 if (!has_inline) { i++; if (!argv[i]) { perr("missing value for --output-limit\n"); return -1; } v = argv[i]; }
-                cfg->outsize = (ssize_t)ft_atoi(v);
+                cfg->outsize = (ssize_t)ft_atossize(v);
             }
             else if (LONGEQ("quiet", name, namelen))   { cfg->options |= OPT_quiet; }
             else if (LONGEQ("help", name, namelen))    { return 1; }
@@ -244,7 +244,7 @@ int parse(char **argv, parser_t *cfg)
                     case 'o':
                         if (attached) { val = attached; p += ft_strlen(attached); }
                         else { i++; if (!argv[i]) { perr("missing value for -o\n"); return -1; } val = argv[i]; }
-                        cfg->outsize = (ssize_t)ft_atoi(val);
+                        cfg->outsize = (ssize_t)ft_atossize(val);
                         break;
 
                     default:

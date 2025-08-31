@@ -146,7 +146,8 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
             else
             {
                 write(mfd, buf, n);
-                write(fds->in_fd, buf, n);
+                // write(fds->in_fd, buf, n);
+                fh_write(LOG_IN, &fds->in_ctx, fds->in_fd, buf, n, 1);
                 log_msg(LOG_LEVEL_DEBUG, "Wrote %zd bytes from stdin to master\n", n);
             }
         }
@@ -163,8 +164,8 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
             if (echo)
                 write(stdout_fd, buf, n);
             /* write to file */
-            total_written += fh_write(&fds->both_ctx, fds->both_fd, buf, n, flush);
-            fh_write(&fds->out_ctx, fds->out_fd, buf, n, flush);
+            total_written += fh_write(LOG_OUT, &fds->both_ctx, fds->both_fd, buf, n, flush);
+            fh_write(LOG_OUT, &fds->out_ctx, fds->out_fd, buf, n, flush);
         }
 
         if (total_written >= out_limit && (out_limit != 0))

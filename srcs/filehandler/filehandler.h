@@ -23,8 +23,15 @@ typedef struct
     fh_ctx both_ctx;
 } open_fds;
 
+typedef enum
+{
+    LOG_INTERN = 'H',
+    LOG_IN = 'I',
+    LOG_OUT = 'O'
+} log_adv;
+
 ssize_t fh_flush(fh_ctx* ctx, int fd);
-ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush);
+ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t count, int flush);
 int fh_open_files(open_fds* fds, parser_t* cfg);
 
 #endif /* FILEHANDLER_H */

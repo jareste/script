@@ -91,6 +91,15 @@ int	ft_dprintf(int fd, const char *s, ...)
 	va_end(args);
 	return (c_printed);
 }
+
+int	ft_vdprintf(int fd, const char *s, va_list args)
+{
+    int	c_printed;
+
+    c_printed = 0;
+    c_printed = bucle(fd, s, args, c_printed);
+    return (c_printed);
+}
 /*
 #include <stdio.h>
 int	main(void)

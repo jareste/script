@@ -141,7 +141,7 @@ fail:
     return -1;
 }
 
-ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
+ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
 {
     /* Usually we should always receive only one byte at a time.
      * That's bc no canonical. but just in case :) 
@@ -157,8 +157,22 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
     if (fd == -1 || (!buf && count))
         return -1;
 
+    if (m_time_fd != -1)
+    {
+        clock_gettime(CLOCK_MONOTONIC, &new_time);
+        time_dif_in_s = (new_time.tv_sec - m_last_entry_time.tv_sec)
+                    + (new_time.tv_nsec - m_last_entry_time.tv_nsec) / 1e9;
+        ft_dprintf(m_time_fd, "%c %f", (char)type, time_dif_in_s);
+        ft_dprintf(m_time_fd, " %d\n", (int)count);
+        log_msg(LOG_LEVEL_DEBUG, "%f %d\n", time_dif_in_s, count);
+        clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
+    }
+
     if (flush)
+    {
+        /* Flag 'T' and 't' */
         return write(fd, buf, count);
+    }
 
     for (i = 0; i < count; i++)
     {
@@ -213,18 +227,6 @@ ssize_t fh_write(fh_ctx* ctx, int fd, const void *buf, size_t count, int flush)
             FLUSH_LINE(fd, &total_written);
             ctx->buf[ctx->head++] = c;
         }
-    }
-
-    /* Flag 'T' and 't' */
-    if (m_time_fd != -1)
-    {
-        clock_gettime(CLOCK_MONOTONIC, &new_time);
-        time_dif_in_s = (new_time.tv_sec - m_last_entry_time.tv_sec)
-                    + (new_time.tv_nsec - m_last_entry_time.tv_nsec) / 1e9;
-        ft_dprintf(m_time_fd, "%f", time_dif_in_s);
-        ft_dprintf(m_time_fd, " %d\n", (int)count);
-        log_msg(LOG_LEVEL_DEBUG, "%f %d\n", time_dif_in_s, count);
-        clock_gettime(CLOCK_MONOTONIC, &m_last_entry_time);
     }
 
     return total_written;

@@ -85,8 +85,7 @@ int parse(char **argv, parser_t *cfg)
             i++;
             break;
         }
-
-        if (m_is_longopt(arg))
+        else if (m_is_longopt(arg))
         {
             /* Forma larga: --name o --name=value */
             name = arg + 2;
@@ -168,15 +167,15 @@ int parse(char **argv, parser_t *cfg)
             }
             continue;
         }
-
-        if (m_is_shortopt(arg))
+        else if (m_is_shortopt(arg))
         {
             p = arg + 1;
             while (*p)
             {
                 opt = *p++;
 
-                if (opt=='I' || opt=='O' || opt=='B' || opt=='T' || opt=='t' || opt=='m' || opt=='c' || opt=='E' || opt=='o') {
+                if (opt=='I' || opt=='O' || opt=='B' || opt=='T' || opt=='t' || opt=='m' || opt=='c' || opt=='E' || opt=='o')
+                {
                     /* opciones que pueden/ deben tomar valor */
                     attached = shortopt_attached_value(p);
                     val = NULL;
@@ -256,10 +255,10 @@ int parse(char **argv, parser_t *cfg)
                         ft_dprintf(2, "script: invalid option -- '%c'\n", opt);
                         return -1;
                     }
+                    }
                 }
-            }
-            else
-            {
+                else
+                {
                     if (opt=='a') cfg->options |= OPT_append;
                     else if (opt=='e') cfg->options |= OPT_ereturnchild;
                     else if (opt=='f') cfg->options |= OPT_fflush;
@@ -273,6 +272,12 @@ int parse(char **argv, parser_t *cfg)
                     }
                 }
             }
+            continue;
+        }
+        else
+        {
+            cfg->file = arg;
+            cfg->options |= OPT_OUTFILE;
             continue;
         }
 

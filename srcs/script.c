@@ -111,6 +111,7 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
     time_t t;
     char* time_str;
     ssize_t total_written = 0;
+    ssize_t tmp = 0;
 
     log_msg(LOG_LEVEL_DEBUG, "starting copy loop with echo [%d], flush [%d], out_limit [%zd]\n", echo, flush, out_limit);
     while (true)
@@ -139,13 +140,13 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
             n = read(stdin_fd, buf, sizeof(buf));
             if (n <= 0)
             { /* EOF on stdin -> shutdown write side to child */
-                write(stdout_fd, "exit\r\n", 7);
-                write(mfd, "exit\r\n", 7);
+                (void)write(stdout_fd, "exit\r\n", 7);
+                (void)write(mfd, "exit\r\n", 7);
                 break;
             }
             else
             {
-                write(mfd, buf, n);
+                (void)write(mfd, buf, n);
                 // write(fds->in_fd, buf, n);
                 fh_write(LOG_IN, &fds->in_ctx, fds->in_fd, buf, n, 1);
                 log_msg(LOG_LEVEL_DEBUG, "Wrote %zd bytes from stdin to master\n", n);
@@ -162,12 +163,14 @@ static int m_copy_loop(int mfd, open_fds* fds, pid_t child, bool echo, bool flus
             }
             /* echo to screen */
             if (echo)
-                write(stdout_fd, buf, n);
+                (void)write(stdout_fd, buf, n);
             /* write to file */
-            total_written += fh_write(LOG_OUT, &fds->both_ctx, fds->both_fd, buf, n, flush);
-            fh_write(LOG_OUT, &fds->out_ctx, fds->out_fd, buf, n, flush);
+            fh_write(LOG_OUT, &fds->both_ctx, fds->both_fd, buf, n, flush);
+            log_msg(LOG_LEVEL_DEBUG, "Wrote %zd bytes from master to both file\n", tmp);
+            total_written += fh_write(LOG_OUT, &fds->out_ctx, fds->out_fd, buf, n, flush);
         }
 
+        log_msg(LOG_LEVEL_DEBUG, "Total written[%zd] Out limit[%zd] \n", total_written, out_limit);
         if (total_written >= out_limit && (out_limit != 0))
             break;
     }

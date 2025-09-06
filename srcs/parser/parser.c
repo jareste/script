@@ -47,7 +47,7 @@ static void perr(const char *msg)
 {
     if (!msg)
         return;
-    write(2, msg, ft_strlen(msg));
+    (void)write(2, msg, ft_strlen(msg));
 }
 
 int parse(char **argv, parser_t *cfg)

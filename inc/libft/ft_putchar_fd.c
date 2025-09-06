@@ -14,5 +14,7 @@
 
 void	ft_putchar_fd(char c, int fd)
 {
-	write(fd, &c, sizeof(c));
+	size_t foo;
+	foo = write(fd, &c, sizeof(c));
+	(void)foo;
 }

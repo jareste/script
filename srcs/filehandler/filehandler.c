@@ -169,7 +169,11 @@ ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t coun
     double time_dif_in_s;
 
     if (fd == -1 || (!buf && count))
+    {
+        log_msg(LOG_LEVEL_DEBUG, "fd[%d] or buf[%p], count[%zu]\n", fd, buf, count);
+        log_msg(LOG_LEVEL_DEBUG, "*************************************\n");
         return -1;
+    }
 
     if (m_time_fd != -1)
     {
@@ -206,7 +210,8 @@ ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t coun
             ctx->cr_pending = 0;
         }
 
-        if (c == '\b' || c == 0x7F)
+        // if (c == '\b' || c == 0x7F)
+        if (c == '\b')
         {
             POP_UTF8();
             continue;
@@ -217,11 +222,11 @@ ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t coun
             continue;
         }
 
-        if (c == '\r')
-        {
-            ctx->cr_pending = 1;
-            continue;
-        }
+        // if (c == '\r')
+        // {
+        //     ctx->cr_pending = 1;
+        //     continue;
+        // }
 
         if (c == '\n')
         {
@@ -232,8 +237,8 @@ ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t coun
             continue;
         }
 
-        if (c < 32 && c != '\t')
-            continue;
+        // if (c < 32 && c != '\t')
+        //     continue;
 
         if (ctx->head < sizeof(ctx->buf))
         {
@@ -248,6 +253,7 @@ ssize_t fh_write(log_adv type, fh_ctx* ctx, int fd, const void *buf, size_t coun
         }
     }
 
+    log_msg(LOG_LEVEL_DEBUG, "---------Total written[%zd]\n", total_written);
     return total_written;
 }
 
